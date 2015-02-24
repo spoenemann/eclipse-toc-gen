@@ -1,0 +1,5 @@
+.DS_Store
+bin
+xtend-gen
+*.xtendbin
+*.java._trace
