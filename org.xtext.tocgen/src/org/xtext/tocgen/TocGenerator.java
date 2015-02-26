@@ -93,6 +93,7 @@ class TocGenerator {
 			if (output != null)
 				output.close();
 		}
+		System.out.println("Generated file " + destDirName + File.separator + "toc.xml");
 	}
 	
 	private void generateContent(List<File> markdownFiles, Writer output) throws IOException {
@@ -113,7 +114,7 @@ class TocGenerator {
 			try {
 				closeable = new FileReader(file);
 				BufferedReader reader = new BufferedReader(closeable);
-				System.out.println("Processing file " + file.getName());
+				System.out.println("Processing file " + file.getPath());
 				generateContent(fileName, reader, output);
 			} finally {
 				if (closeable != null)
