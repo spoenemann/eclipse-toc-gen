@@ -80,9 +80,10 @@ class TocGenerator {
 		String docTitle = getPart(indexFile);
 		
 		indentLevel = 0;
+		File outputFile = new File(destDirName + File.separator + "toc.xml");
 		FileWriter output = null;
 		try {
-			output = new FileWriter(destDirName + File.separator + "toc.xml");
+			output = new FileWriter(outputFile);
 			write(output, "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>");
 			write(output, "<toc topic=\"", destDirName, "/index.html\" label=\"", docTitle, "\">");
 			indent(+1);
@@ -93,7 +94,7 @@ class TocGenerator {
 			if (output != null)
 				output.close();
 		}
-		System.out.println("Generated file " + destDirName + File.separator + "toc.xml");
+		System.out.println("Generated file " + outputFile.getAbsolutePath());
 	}
 	
 	private void generateContent(List<File> markdownFiles, Writer output) throws IOException {
@@ -114,7 +115,7 @@ class TocGenerator {
 			try {
 				closeable = new FileReader(file);
 				BufferedReader reader = new BufferedReader(closeable);
-				System.out.println("Processing file " + file.getPath());
+				System.out.println("Processing file " + file.getAbsolutePath());
 				generateContent(fileName, reader, output);
 			} finally {
 				if (closeable != null)
@@ -227,7 +228,17 @@ class TocGenerator {
 			else
 				return result;
 		} else {
-			return getSectionName(line).toLowerCase().replaceAll("\\W", "-");
+			String sectionName = getSectionName(line).toLowerCase();
+			StringBuilder result = new StringBuilder();
+			for (int i = 0; i < sectionName.length(); i++) {
+				char c = sectionName.charAt(i);
+				if (Character.isLetterOrDigit(c) || c == '-') {
+					result.append(c);
+				} else if (c == ' ') {
+					result.append('-');
+				}
+			}
+			return result.toString();
 		}
 	}
 	
