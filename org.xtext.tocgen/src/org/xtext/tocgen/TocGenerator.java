@@ -16,7 +16,9 @@ import java.io.IOException;
 import java.io.Writer;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 class TocGenerator {
 	
@@ -52,6 +54,7 @@ class TocGenerator {
 	private final String sourceDirName;
 	private final String destDirName;
 	private final String fileExtension = ".md";
+	private final String alternateFileExtension = ".html";
 	private final int maxSectionLevel = 3;
 	
 	private int indentLevel;
@@ -72,12 +75,12 @@ class TocGenerator {
 			System.err.println("The directory " + sourceDirName + " does not contain any valid input files.");
 			System.exit(1);
 		}
+		String docTitle = "";
 		File indexFile = new File(sourceDirName + File.separator + "index" + fileExtension);
-		if (!indexFile.exists()) {
-			System.err.println("The directory " + sourceDirName + " does not contain an index." + fileExtension + " file.");
-			System.exit(1);
-		}
-		String docTitle = getPart(indexFile);
+		if (!indexFile.exists())
+			indexFile = new File(sourceDirName + File.separator + "index" + alternateFileExtension);
+		if (indexFile.exists())
+			docTitle = getVariables(indexFile).get("page.part");
 		
 		indentLevel = 0;
 		File outputFile = new File(destDirName + File.separator + "toc.xml");
@@ -101,7 +104,8 @@ class TocGenerator {
 		String lastPart = null;
 		for (File file : markdownFiles) {
 			String fileName = file.getName().substring(0, file.getName().length() - fileExtension.length());
-			String partName = getPart(file);
+			Map<String, String> variables = getVariables(file);
+			String partName = variables.get("page.part");
 			if (!partName.equals(lastPart)) {
 				if (lastPart != null) {
 					indent(-1);
@@ -116,7 +120,7 @@ class TocGenerator {
 				closeable = new FileReader(file);
 				BufferedReader reader = new BufferedReader(closeable);
 				System.out.println("Processing file " + file.getAbsolutePath());
-				generateContent(fileName, reader, output);
+				generateContent(fileName, reader, output, variables);
 			} finally {
 				if (closeable != null)
 					closeable.close();
@@ -127,11 +131,11 @@ class TocGenerator {
 		write(output, "</topic>");
 	}
 	
-	private void generateContent(String fileName, BufferedReader reader, Writer output) throws IOException {
+	private void generateContent(String fileName, BufferedReader reader, Writer output, Map<String, String> variables) throws IOException {
 		int lastSectionLevel = 0;
 		String line = getNextSection(reader);
 		while (line != null) {
-			String sectionName = getSectionName(line);
+			String sectionName = getSectionName(line, variables);
 			if (sectionName != null) {
 				int sectionLevel = getSectionLevel(line);
 				if (lastSectionLevel == 0) {
@@ -143,11 +147,11 @@ class TocGenerator {
 						indent(-1);
 						write(output, "</topic>");
 					}
-					String anchor = getSectionAnchor(line);
+					String anchor = getSectionAnchor(line, variables);
 					write(output, "<topic href=\"", destDirName, "/", fileName, ".html#", anchor, "\" label=\"", sectionName, "\">");
 					indent(+1);
 					if (sectionLevel > lastSectionLevel + 1)
-						lastSectionLevel = sectionLevel + 1;
+						lastSectionLevel = lastSectionLevel + 1;
 					else
 						lastSectionLevel = sectionLevel;
 				}
@@ -161,7 +165,8 @@ class TocGenerator {
 	}
 	
 	@SuppressWarnings("resource")
-	private String getPart(File file) throws IOException {
+	private Map<String, String> getVariables(File file) throws IOException {
+		Map<String, String> result = new HashMap<String, String>();
 		FileReader closeable = null;
 		try {
 			closeable = new FileReader(file);
@@ -170,10 +175,10 @@ class TocGenerator {
 			boolean firstLine = true;
 			while (line != null) {
 				if (line == null || firstLine && !line.startsWith("---") || !firstLine && line.startsWith("---"))
-					return "";
-				if (line.startsWith("part:")) {
-					return line.substring(5).trim();
-				}
+					return result;
+				String[] varDecl = line.split(":");
+				if (varDecl.length == 2)
+					result.put("page." + varDecl[0].trim(), varDecl[1].trim());
 				line = reader.readLine();
 				firstLine = false;
 			}
@@ -181,7 +186,7 @@ class TocGenerator {
 			if (closeable != null)
 				closeable.close();
 		}
-		return "";
+		return result;
 	}
 	
 	private String getNextSection(BufferedReader reader) throws IOException {
@@ -205,20 +210,34 @@ class TocGenerator {
 		return result;
 	}
 	
-	private String getSectionName(String line) {
+	private String getSectionName(String line, Map<String, String> variables) {
+		StringBuilder result = new StringBuilder();
+		int variableStart = -1;
 		for (int i = 0; i < line.length(); i++) {
-			if (line.charAt(i) != '#') {
-				int anchorIndex = line.indexOf('{');
-				if (anchorIndex >= i)
-					return line.substring(i, anchorIndex).trim();
-				else
-					return line.substring(i).trim();
+			char c = line.charAt(i);
+			if (c == '{') {
+				if (i >= 1 && line.charAt(i - 1) == '{' && variableStart < 0)
+					variableStart = i + 1;
+			} else if (c == '}') {
+				if (i < line.length() - 1 && line.charAt(i + 1) == '}' && variableStart >= 0) {
+					String variable = line.substring(variableStart, i);
+					result.append(variables.get(variable));
+					variableStart = -1;
+					i++;
+				}
+			} else if (c == '#') {
+				if (result.length() > 0) {
+					// The section anchor is not included in the name
+					break;
+				}
+			} else if (variableStart < 0) {
+				result.append(c);
 			}
 		}
-		return null;
+		return result.toString().trim();
 	}
 	
-	private String getSectionAnchor(String line) {
+	private String getSectionAnchor(String line, Map<String, String> variables) {
 		int anchorStartIndex = line.indexOf('{');
 		int anchorEndIndex = line.indexOf('}');
 		if (anchorStartIndex >= 0 && anchorEndIndex > anchorStartIndex) {
@@ -228,7 +247,7 @@ class TocGenerator {
 			else
 				return result;
 		} else {
-			String sectionName = getSectionName(line).toLowerCase();
+			String sectionName = getSectionName(line, variables).toLowerCase();
 			StringBuilder result = new StringBuilder();
 			for (int i = 0; i < sectionName.length(); i++) {
 				char c = sectionName.charAt(i);
